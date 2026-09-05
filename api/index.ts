@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import express from 'express';
-import { AppModule } from '../src/app.module';
+import { AppModule } from '../src/app.module.js';
 
 const server = express();
 let bootstrapped: Promise<void> | undefined;
