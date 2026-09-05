@@ -149,6 +149,39 @@ npm run format
 
 ## Deployment
 
+### Deploying to Vercel (recommended for this project)
+
+NestJS is a long-running server framework, not a static/Next.js app, so it's deployed to Vercel as a single serverless function that wraps the Nest app. This repo already includes the wiring for that:
+
+- [`api/index.ts`](api/index.ts) — boots the Nest app once per cold start (via an Express adapter) and reuses it across invocations.
+- [`vercel.json`](vercel.json) — routes every incoming request to that function.
+- `prisma/schema.prisma` — generator includes `binaryTargets = ["native", "rhel-openssl-3.0.x"]` so the Prisma engine matches Vercel's Amazon Linux runtime.
+- `package.json` — has a `postinstall: prisma generate` script, since Vercel reinstalls dependencies on every deploy and the generated client isn't committed.
+
+Steps:
+
+1. **Push this repo to GitHub/GitLab/Bitbucket** (Vercel deploys from a git provider).
+2. **Import the project** at [vercel.com/new](https://vercel.com/new) and select the repo.
+3. **Set environment variables** in the Vercel project settings (Settings → Environment Variables):
+   - `DATABASE_URL` — use Neon's **pooled** connection string (usually the host with a `-pooler` suffix) since serverless functions can open many concurrent connections.
+   - Do **not** set `PORT` — Vercel manages the port for serverless functions.
+4. **Deploy** — Vercel runs `npm install` (triggering `postinstall` → `prisma generate`), then serves every route through `api/index.ts`.
+5. After deploying, apply any pending migrations against the production database from your machine (Vercel doesn't run migrations automatically):
+
+   ```bash
+   DATABASE_URL="<production-database-url>" npx prisma migrate deploy
+   ```
+
+Or deploy from the CLI instead of the dashboard:
+
+```bash
+npm install -g vercel
+vercel        # preview deployment
+vercel --prod # production deployment
+```
+
+### Other deployment options
+
 ### 1. Build a production bundle
 
 ```bash
