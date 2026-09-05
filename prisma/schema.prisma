@@ -29,6 +29,7 @@ model User {
   name         String   @db.VarChar(100)
   email        String   @unique @db.VarChar(255)
   passwordHash String   @map("password_hash")
+  mustChangePassword Boolean  @default(false) @map("must_change_password")
   roleId       String   @map("role_id") @db.Uuid
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
