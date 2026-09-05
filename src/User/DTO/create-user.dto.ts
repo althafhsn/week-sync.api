@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsNotEmpty, IsString, IsUUID, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -14,4 +14,8 @@ export class CreateUserDto {
 
   @IsUUID()
   roleId: string;
+
+  @IsBoolean()
+  mustChangePassword: boolean;
+
 }

@@ -13,8 +13,11 @@ export class AuthService {
   async login(email: string, password: string) {
     const user = await this.userService.findByEmail(email);
 
-    if (!user || !user.isActive) {
+    if (!user) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException('User account is locked or inactive. Please contact support.');
     }
 
     const passwordMatches = await bcrypt.compare(password, user.passwordHash);
@@ -31,6 +34,13 @@ export class AuthService {
 
     return {
       accessToken: await this.jwtService.signAsync(payload),
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        roleId: user.roleId,
+        mustChangePassword: user.mustChangePassword,    
+      }
     };
   }
 }
