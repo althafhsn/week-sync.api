@@ -1,0 +1,118 @@
+{
+  "info": {
+    "name": "WeekSync API",
+    "description": "CRUD requests for the /project resource.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "projectId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Create Project",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  const body = pm.response.json();",
+              "  pm.collectionVariables.set('projectId', body.id);",
+              "}",
+              "pm.test('status is 201', () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"My Project\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/project", "host": ["{{baseUrl}}"], "path": ["project"] }
+      }
+    },
+    {
+      "name": "List Projects",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/project", "host": ["{{baseUrl}}"], "path": ["project"] }
+      }
+    },
+    {
+      "name": "Get Project By Id",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/project/{{projectId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["project", "{{projectId}}"]
+        }
+      }
+    },
+    {
+      "name": "Update Project",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"My Project - Renamed\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/project/{{projectId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["project", "{{projectId}}"]
+        }
+      }
+    },
+    {
+      "name": "Delete Project",
+      "request": {
+        "method": "DELETE",
+        "url": {
+          "raw": "{{baseUrl}}/project/{{projectId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["project", "{{projectId}}"]
+        }
+      }
+    },
+    {
+      "name": "Create Project - Invalid (400)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/project", "host": ["{{baseUrl}}"], "path": ["project"] }
+      }
+    },
+    {
+      "name": "Get Project - Not Found (404)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/project/00000000-0000-0000-0000-000000000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["project", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
+    },
+    {
+      "name": "Get Project - Malformed Id (400)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/project/not-a-uuid",
+          "host": ["{{baseUrl}}"],
+          "path": ["project", "not-a-uuid"]
+        }
+      }
+    }
+  ]
+}
