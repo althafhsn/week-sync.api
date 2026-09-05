@@ -153,24 +153,42 @@ npm run format
 
 NestJS is a long-running server framework, not a static/Next.js app, so it's deployed to Vercel as a single serverless function that wraps the Nest app. This repo already includes the wiring for that:
 
-- [`api/index.ts`](api/index.ts) — boots the Nest app once per cold start (via an Express adapter) and reuses it across invocations.
-- [`vercel.json`](vercel.json) — routes every incoming request to that function.
+- [`api/index.ts`](api/index.ts) — boots the Nest app once per cold start (via an Express adapter) and reuses it across invocations. This is the actual deployed entry point — Vercel auto-detects it as a Node.js serverless function.
+- [`vercel.json`](vercel.json) — `buildCommand: "npx prisma migrate deploy"` (runs any pending migrations against whatever `DATABASE_URL` is set for that deployment's environment — it's a no-op if there's nothing pending, so it's safe to run on every deploy; `api/index.ts` itself needs no separate build step, it's compiled directly by Vercel's function builder), `outputDirectory: public` (a placeholder `public/index.html` exists purely so Vercel's output check has something to find — real traffic never reaches it), and a rewrite that routes every path to `api/index`.
+- `api/package.json` and `src/package.json` — both set `"type": "module"`. Vercel's function runtime doesn't support Node's `require()`-of-ESM interop the way local Node does, and the `@nestjs/*` packages here are ESM-only, so the whole `api/` + `src/` tree compiles to genuine ESM (every relative import uses an explicit `.js` extension, required by `tsconfig.json`'s `nodenext` module resolution once a file sits in an ESM package boundary) instead of relying on that runtime-dependent interop.
 - `prisma/schema.prisma` — generator includes `binaryTargets = ["native", "rhel-openssl-3.0.x"]` so the Prisma engine matches Vercel's Amazon Linux runtime.
-- `package.json` — has a `postinstall: prisma generate` script, since Vercel reinstalls dependencies on every deploy and the generated client isn't committed.
+- `package.json` — has a `postinstall: prisma generate` script (Vercel reinstalls dependencies on every deploy and the generated client isn't committed), and `engines.node: ">=22.12.0"`.
 
 Steps:
 
 1. **Push this repo to GitHub/GitLab/Bitbucket** (Vercel deploys from a git provider).
-2. **Import the project** at [vercel.com/new](https://vercel.com/new) and select the repo.
-3. **Set environment variables** in the Vercel project settings (Settings → Environment Variables):
-   - `DATABASE_URL` — use Neon's **pooled** connection string (usually the host with a `-pooler` suffix) since serverless functions can open many concurrent connections.
-   - Do **not** set `PORT` — Vercel manages the port for serverless functions.
-4. **Deploy** — Vercel runs `npm install` (triggering `postinstall` → `prisma generate`), then serves every route through `api/index.ts`.
-5. After deploying, apply any pending migrations against the production database from your machine (Vercel doesn't run migrations automatically):
+2. **Import the project** at [vercel.com/new](https://vercel.com/new) and select the repo. If Vercel offers an "Application Preset"/"Framework Preset", choose **Other** — a NestJS-specific preset may try to auto-run `src/main.ts` directly (which calls `app.listen()` and isn't a valid serverless handler), bypassing `api/index.ts` and `vercel.json` entirely.
+3. **Leave Root Directory, Build Command, and Output Directory as default/blank** in Project Settings — `vercel.json` already controls these explicitly.
+4. Confirm **Node.js Version** (Settings → General) is set to a modern version (24.x) matching `engines.node` in `package.json`.
+5. **Set environment variables** (Settings → Environment Variables):
+   - `DATABASE_URL` — use Neon's **pooled** connection string (host with a `-pooler` suffix), since serverless functions can open many concurrent connections and easily exceed a direct connection's limit. Mark it **Sensitive/Encrypted**.
+   - Do **not** set `PORT` — Vercel manages that for serverless functions.
+6. **Deploy** — Vercel runs `npm install` (triggering `postinstall` → `prisma generate`), then runs `buildCommand` (`npx prisma migrate deploy`, applying any pending migrations to that environment's `DATABASE_URL`), then serves every route through `api/index.ts`.
 
-   ```bash
-   DATABASE_URL="<production-database-url>" npx prisma migrate deploy
-   ```
+Migrations now apply automatically on every Vercel deploy — no manual step needed for Production. Two things to keep in mind:
+
+- If you also deploy **Preview** builds (PRs/branches) with their own `DATABASE_URL` set, the same `migrate deploy` runs against whichever database that Preview environment points to.
+- This only *applies* migrations that already exist as files under `prisma/migrations/` — you still create them locally first with `npx prisma migrate dev --name <description>` and commit the generated folder before deploying.
+
+If you ever need to run it manually against a specific database (e.g. to backfill before the first automated deploy, like we did once here), do it from your own machine (not on Vercel — it has no shell to run commands in), from the project root:
+
+PowerShell:
+
+```powershell
+$env:DATABASE_URL = "<database-url>"
+npx prisma migrate deploy
+```
+
+bash:
+
+```bash
+DATABASE_URL="<database-url>" npx prisma migrate deploy
+```
 
 Or deploy from the CLI instead of the dashboard:
 
