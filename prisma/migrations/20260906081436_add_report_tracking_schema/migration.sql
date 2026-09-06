@@ -7,6 +7,9 @@
 -- CreateEnum
 CREATE TYPE "ReportHighlightCategory" AS ENUM ('ACHIEVEMENT', 'BLOCKER');
 
+-- DropTable (stale table from a deleted migration; still references "Project")
+DROP TABLE IF EXISTS "user_projects" CASCADE;
+
 -- DropTable
 DROP TABLE "Project";
 
