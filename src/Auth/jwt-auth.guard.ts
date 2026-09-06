@@ -12,7 +12,7 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const authorization = request.headers.authorization;
+    const authorization = request.headers.authorization || request.headers.token;
 
     if (!authorization?.startsWith('Bearer ')) {
       throw new UnauthorizedException('Bearer token is required');

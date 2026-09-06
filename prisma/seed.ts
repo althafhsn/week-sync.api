@@ -17,6 +17,7 @@ async function seedLookup(
 
 async function main() {
   await seedLookup(prisma.projectStatus, ['Proposed', 'Active', 'Archived']);
+  await seedLookup(prisma.role, ['Manager', 'Team Member']);
 
   await seedLookup(prisma.reportStatus, [
     'Draft',
