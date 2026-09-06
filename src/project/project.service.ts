@@ -12,15 +12,54 @@ export class ProjectService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createProjectDto: CreateProjectDto) {
-    try {
-      return await this.prisma.project.create({ data: createProjectDto });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === UNIQUE_CONSTRAINT_VIOLATION) {
-        throw new ConflictException(`A project named "${createProjectDto.name}" already exists`);
-      }
-      throw error;
+  const { teamMemberIds, ...projectData } = createProjectDto;
+
+  try {
+    return await this.prisma.project.create({
+      data: {
+        ...projectData,
+        teamMembers: {
+          create: teamMemberIds.map((userId) => ({
+            user: {
+              connect: { id: userId },
+            },
+          })),
+        },
+      },
+      include: {
+        teamMembers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw new ConflictException(
+        `A project named "${createProjectDto.name}" already exists`,
+      );
     }
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2025'
+    ) {
+      throw new NotFoundException('One or more team members were not found');
+    }
+
+    throw error;
   }
+}
 
   findAll() {
     return this.prisma.project.findMany();
