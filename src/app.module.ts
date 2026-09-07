@@ -17,6 +17,7 @@ import { ReportModule } from './report/report.module.js';
 import { TaskModule } from './task/task.module.js';
 import { ReportHighlightModule } from './report-highlight/report-highlight.module.js';
 import { ReportHoursModule } from './report-hours/report-hours.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ReportHoursModule } from './report-hours/report-hours.module.js';
     TaskModule,
     ReportHighlightModule,
     ReportHoursModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
