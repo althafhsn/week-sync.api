@@ -1,6 +1,6 @@
 import { IsArray, IsBoolean, IsDefined, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { IdRefDto } from '../../common/dto/id-ref.dto.js';
+import { IntIdRefDto } from '../../common/dto/int-id-ref.dto.js';
 import { UserProjectRefDto } from './user-project-ref.dto.js';
 
 export class CreateProjectDto {
@@ -16,8 +16,8 @@ export class CreateProjectDto {
 
   @IsDefined()
   @ValidateNested()
-  @Type(() => IdRefDto)
-  projectStatus: IdRefDto;
+  @Type(() => IntIdRefDto)
+  projectStatus: IntIdRefDto;
 
   @IsBoolean()
   @IsOptional()

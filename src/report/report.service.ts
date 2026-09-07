@@ -3,40 +3,109 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateReportDto } from './dto/create-report.dto.js';
 import { UpdateReportDto } from './dto/update-report.dto.js';
-import { FindReportsDto } from './dto/find-reports.dto.js';
+import { syncReportChildren } from './report-content-sync.util.js';
+import { pickTaskData, pickNextWeekTaskData, pickHighlightData, pickHoursData } from './report-content-item.util.js';
 import { isRestrictViolation } from '../common/prisma-error.util.js';
-import { resolvePagination, toPaginatedResult } from '../common/pagination.util.js';
+import { parseInclude } from '../common/parse-include.util.js';
+import { RawPaginationQuery, resolvePagination, toPaginatedResult } from '../common/pagination.util.js';
 
 const RECORD_NOT_FOUND = 'P2025';
+const FOREIGN_KEY_VIOLATION = 'P2003';
+
+const REPORT_INCLUDE_MAP = {
+  user: { field: 'user', value: { select: { id: true, name: true, email: true, jobTitle: true } } },
+  project: { field: 'project', value: true },
+  reportStatus: { field: 'reportStatus', value: true },
+  tasks: { field: 'tasks', value: { include: { priorityType: true, taskStatus: true } } },
+  reportNextWeekTasks: { field: 'reportNextWeekTasks', value: true },
+  reportHighlights: { field: 'reportHighlights', value: { include: { reportHighlightType: true } } },
+  reportHours: { field: 'reportHours', value: { include: { reportHourType: true } } },
+};
 
 @Injectable()
 export class ReportService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(createReportDto: CreateReportDto) {
-    return this.prisma.report.create({ data: createReportDto });
+  private buildInclude(include?: string) {
+    return parseInclude<Prisma.ReportInclude>(include, REPORT_INCLUDE_MAP);
   }
 
-  async findAll(filter: FindReportsDto) {
-    const where = { userId: filter.userId, projectId: filter.projectId };
-    const pagination = resolvePagination(filter);
+  async create(dto: CreateReportDto, include?: string) {
+    const {
+      userId,
+      projectId,
+      tasks,
+      reportHighlights,
+      reportHours,
+      reportNextWeekTasks,
+      startDate,
+      endDate,
+      id: _id,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      user: _user,
+      project: _project,
+      reportStatus: _reportStatus,
+      ...rest
+    } = dto;
+
+    try {
+      return await this.prisma.report.create({
+        data: {
+          userId,
+          projectId,
+          ...rest,
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          ...(tasks?.length && { tasks: { create: tasks.map(pickTaskData) } }),
+          ...(reportNextWeekTasks?.length && {
+            reportNextWeekTasks: { create: reportNextWeekTasks.map(pickNextWeekTaskData) },
+          }),
+          ...(reportHighlights?.length && { reportHighlights: { create: reportHighlights.map(pickHighlightData) } }),
+          ...(reportHours?.length && { reportHours: { create: reportHours.map(pickHoursData) } }),
+        },
+        include: this.buildInclude(include),
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === FOREIGN_KEY_VIOLATION) {
+        throw new NotFoundException('User, project, or one of the referenced lookup values was not found');
+      }
+      throw error;
+    }
+  }
+
+  async findAll(
+    include?: string,
+    filters?: { userId?: string; projectId?: string; reportStatusId?: number; startDate?: string; endDate?: string },
+    pageQuery?: RawPaginationQuery,
+  ) {
+    const pagination = resolvePagination(pageQuery);
+    const where: Prisma.ReportWhereInput = {
+      userId: filters?.userId,
+      projectId: filters?.projectId,
+      reportStatusId: filters?.reportStatusId,
+      ...(filters?.startDate && { startDate: { gte: new Date(filters.startDate) } }),
+      ...(filters?.endDate && { endDate: { lte: new Date(filters.endDate) } }),
+    };
 
     const [data, count] = await Promise.all([
-      this.prisma.report.findMany({ where, skip: pagination.skip, take: pagination.take }),
+      this.prisma.report.findMany({
+        where,
+        skip: pagination.skip,
+        take: pagination.take,
+        orderBy: { createdAt: 'desc' },
+        include: this.buildInclude(include),
+      }),
       this.prisma.report.count({ where }),
     ]);
 
     return toPaginatedResult(data, count, pagination);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, include?: string) {
     const report = await this.prisma.report.findUnique({
       where: { id },
-      include: {
-        reportVersions: {
-          orderBy: { createdAt: 'desc' },
-        },
-      },
+      include: this.buildInclude(include),
     });
     if (!report) {
       throw new NotFoundException(`Report with id "${id}" not found`);
@@ -44,12 +113,96 @@ export class ReportService {
     return report;
   }
 
-  async update(id: string, updateReportDto: UpdateReportDto) {
+  async update(id: string, dto: UpdateReportDto, include?: string) {
+    const {
+      tasks,
+      reportHighlights,
+      reportHours,
+      reportNextWeekTasks,
+      startDate,
+      endDate,
+      id: _id,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      user: _user,
+      project: _project,
+      reportStatus: _reportStatus,
+      ...rest
+    } = dto;
+
     try {
-      return await this.prisma.report.update({ where: { id }, data: updateReportDto });
+      return await this.prisma.$transaction(async (tx) => {
+        if (tasks) {
+          await syncReportChildren(
+            tasks,
+            pickTaskData,
+            {
+              deleteMany: (notInIds) => tx.task.deleteMany({ where: { reportId: id, id: { notIn: notInIds } } }),
+              updateMany: (taskId, data) => tx.task.updateMany({ where: { id: taskId, reportId: id }, data }),
+              create: (data) => tx.task.create({ data: { ...data, reportId: id } }),
+            },
+            'Task',
+          );
+        }
+        if (reportHighlights) {
+          await syncReportChildren(
+            reportHighlights,
+            pickHighlightData,
+            {
+              deleteMany: (notInIds) =>
+                tx.reportHighlight.deleteMany({ where: { reportId: id, id: { notIn: notInIds } } }),
+              updateMany: (highlightId, data) =>
+                tx.reportHighlight.updateMany({ where: { id: highlightId, reportId: id }, data }),
+              create: (data) => tx.reportHighlight.create({ data: { ...data, reportId: id } }),
+            },
+            'Report highlight',
+          );
+        }
+        if (reportHours) {
+          await syncReportChildren(
+            reportHours,
+            pickHoursData,
+            {
+              deleteMany: (notInIds) => tx.reportHours.deleteMany({ where: { reportId: id, id: { notIn: notInIds } } }),
+              updateMany: (hoursId, data) => tx.reportHours.updateMany({ where: { id: hoursId, reportId: id }, data }),
+              create: (data) => tx.reportHours.create({ data: { ...data, reportId: id } }),
+            },
+            'Report hours entry',
+          );
+        }
+        if (reportNextWeekTasks) {
+          await syncReportChildren(
+            reportNextWeekTasks,
+            pickNextWeekTaskData,
+            {
+              deleteMany: (notInIds) =>
+                tx.reportNextWeekTask.deleteMany({ where: { reportId: id, id: { notIn: notInIds } } }),
+              updateMany: (taskId, data) =>
+                tx.reportNextWeekTask.updateMany({ where: { id: taskId, reportId: id }, data }),
+              create: (data) => tx.reportNextWeekTask.create({ data: { ...data, reportId: id } }),
+            },
+            'Next week task',
+          );
+        }
+
+        return tx.report.update({
+          where: { id },
+          data: {
+            ...rest,
+            ...(startDate && { startDate: new Date(startDate) }),
+            ...(endDate && { endDate: new Date(endDate) }),
+          },
+          include: this.buildInclude(include),
+        });
+      }, { timeout: 15000 });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === RECORD_NOT_FOUND) {
-        throw new NotFoundException(`Report with id "${id}" not found`);
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === RECORD_NOT_FOUND) {
+          throw new NotFoundException(`Report with id "${id}" not found`);
+        }
+        if (error.code === FOREIGN_KEY_VIOLATION) {
+          throw new NotFoundException('User, project, or one of the referenced lookup values was not found');
+        }
       }
       throw error;
     }
@@ -63,7 +216,7 @@ export class ReportService {
         throw new NotFoundException(`Report with id "${id}" not found`);
       }
       if (isRestrictViolation(error)) {
-        throw new ConflictException('Cannot delete this report because it still has report versions');
+        throw new ConflictException('Cannot delete this report because it still has related content');
       }
       throw error;
     }

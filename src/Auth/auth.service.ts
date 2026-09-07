@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UserService } from '../User/user.service.js';
@@ -56,6 +56,7 @@ export class AuthService {
         email: user.email,
         roleId: user.roleId,
         mustChangePassword: user.mustChangePassword,
+        jobTitle: user.jobTitle,
         ...('role' in user && user.role ? { role: user.role } : {}),
       }
     };
@@ -96,6 +97,34 @@ export class AuthService {
     await this.prisma.refreshToken.updateMany({
       where: { tokenHash, revokedAt: null },
       data: { revokedAt: new Date() },
+    });
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const passwordMatches = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, mustChangePassword: false },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        roleId: true,
+        jobTitle: true,
+        isActive: true,
+        mustChangePassword: true,
+        createdAt: true,
+      },
     });
   }
 }

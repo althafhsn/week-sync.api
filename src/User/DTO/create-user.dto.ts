@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsNotEmpty, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -12,8 +12,13 @@ export class CreateUserDto {
   @MinLength(8)
   password: string;
 
-  @IsUUID()
-  roleId: string;
+  @IsInt()
+  roleId: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  jobTitle?: string;
 
   @IsBoolean()
   mustChangePassword: boolean;

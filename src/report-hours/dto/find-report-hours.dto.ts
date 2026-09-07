@@ -4,5 +4,5 @@ import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 export class FindReportHoursDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
-  reportVersionId?: string;
+  reportId?: string;
 }

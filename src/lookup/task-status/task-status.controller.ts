@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../Auth/jwt-auth.guard.js';
 import { TaskStatusService } from './task-status.service.js';
 import { CreateLookupDto } from '../../common/lookup/dto/create-lookup.dto.js';
@@ -20,17 +20,17 @@ export class TaskStatusController {
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateLookupDto) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateLookupDto) {
     return this.service.update(id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: string) {
+  remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);
   }
 }

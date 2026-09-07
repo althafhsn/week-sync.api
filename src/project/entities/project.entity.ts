@@ -4,7 +4,7 @@ export class Project implements PrismaProject {
   id: string;
   name: string;
   description: string | null;
-  projectStatusId: string;
+  projectStatusId: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

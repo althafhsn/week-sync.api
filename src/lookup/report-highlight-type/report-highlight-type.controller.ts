@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../Auth/jwt-auth.guard.js';
 import { ReportHighlightTypeService } from './report-highlight-type.service.js';
 import { CreateReportHighlightTypeDto } from './dto/create-report-highlight-type.dto.js';
@@ -20,17 +20,17 @@ export class ReportHighlightTypeController {
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateReportHighlightTypeDto) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateReportHighlightTypeDto) {
     return this.service.update(id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: string) {
+  remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);
   }
 }

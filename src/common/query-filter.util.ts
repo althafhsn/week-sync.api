@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { isUUID } from 'class-validator';
+import { isUUID, isDateString } from 'class-validator';
 
 export function getFilterParam(query: Record<string, unknown> | undefined, key: string): string | undefined {
   if (!query) {
@@ -19,6 +19,26 @@ export function getUuidFilterParam(query: Record<string, unknown> | undefined, k
   const value = getFilterParam(query, key);
   if (value !== undefined && !isUUID(value)) {
     throw new BadRequestException(`"${key}" must be a UUID`);
+  }
+  return value;
+}
+
+export function getIntFilterParam(query: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = getFilterParam(query, key);
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    throw new BadRequestException(`"${key}" must be an integer`);
+  }
+  return parsed;
+}
+
+export function getDateFilterParam(query: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = getFilterParam(query, key);
+  if (value !== undefined && !isDateString(value)) {
+    throw new BadRequestException(`"${key}" must be a valid date`);
   }
   return value;
 }

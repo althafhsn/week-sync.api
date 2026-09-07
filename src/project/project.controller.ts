@@ -3,7 +3,7 @@ import { ProjectService } from './project.service.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
 import { JwtAuthGuard } from '../Auth/jwt-auth.guard.js';
-import { getUuidFilterParam } from '../common/query-filter.util.js';
+import { getUuidFilterParam, getIntFilterParam } from '../common/query-filter.util.js';
 
 @Controller('project')
 @UseGuards(JwtAuthGuard)
@@ -18,7 +18,7 @@ export class ProjectController {
   @Get()
   findAll(@Query('include') include?: string, @Query() query?: Record<string, unknown>) {
     const userId = getUuidFilterParam(query, 'filters.userId');
-    const projectStatusId = getUuidFilterParam(query, 'filters.projectStatusId');
+    const projectStatusId = getIntFilterParam(query, 'filters.projectStatusId');
     return this.projectService.findAll(include, { userId, projectStatusId }, {
       page: query?.page as string | undefined,
       pageSize: query?.pageSize as string | undefined,

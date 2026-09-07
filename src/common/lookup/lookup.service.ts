@@ -9,10 +9,10 @@ const UNIQUE_CONSTRAINT_VIOLATION = 'P2002';
 export interface LookupDelegate<T, TCreate, TUpdate> {
   findMany(args?: { skip?: number; take?: number }): Promise<T[]>;
   count(): Promise<number>;
-  findUnique(args: { where: { id: string } }): Promise<T | null>;
+  findUnique(args: { where: { id: number } }): Promise<T | null>;
   create(args: { data: TCreate }): Promise<T>;
-  update(args: { where: { id: string }; data: TUpdate }): Promise<T>;
-  delete(args: { where: { id: string } }): Promise<T>;
+  update(args: { where: { id: number }; data: TUpdate }): Promise<T>;
+  delete(args: { where: { id: number } }): Promise<T>;
 }
 
 export class LookupService<T, TCreate extends { name: string }, TUpdate extends { name?: string }> {
@@ -30,7 +30,7 @@ export class LookupService<T, TCreate extends { name: string }, TUpdate extends 
     return toPaginatedResult(data, count, pagination);
   }
 
-  async findOne(id: string): Promise<T> {
+  async findOne(id: number): Promise<T> {
     const record = await this.delegate.findUnique({ where: { id } });
     if (!record) {
       throw new NotFoundException(`${this.label} with id "${id}" not found`);
@@ -49,7 +49,7 @@ export class LookupService<T, TCreate extends { name: string }, TUpdate extends 
     }
   }
 
-  async update(id: string, dto: TUpdate): Promise<T> {
+  async update(id: number, dto: TUpdate): Promise<T> {
     try {
       return await this.delegate.update({ where: { id }, data: dto });
     } catch (error) {
@@ -65,7 +65,7 @@ export class LookupService<T, TCreate extends { name: string }, TUpdate extends 
     }
   }
 
-  async remove(id: string): Promise<T> {
+  async remove(id: number): Promise<T> {
     try {
       return await this.delegate.delete({ where: { id } });
     } catch (error) {

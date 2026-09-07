@@ -63,12 +63,12 @@ export class ProjectService {
 
   async findAll(
     include?: string,
-    filters?: { userId?: string; projectStatusId?: string },
+    filters?: { userId?: string; projectStatusId?: number },
     pageQuery?: RawPaginationQuery,
   ) {
     const where: Prisma.ProjectWhereInput = {
       ...(filters?.userId && { userProjects: { some: { userId: filters.userId } } }),
-      ...(filters?.projectStatusId && { projectStatusId: filters.projectStatusId }),
+      ...(filters?.projectStatusId !== undefined && { projectStatusId: filters.projectStatusId }),
     };
     const resolvedWhere = Object.keys(where).length ? where : undefined;
     const pagination = resolvePagination(pageQuery);
