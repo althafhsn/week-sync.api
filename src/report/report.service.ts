@@ -218,6 +218,11 @@ export class ReportService {
     // pass is overridden. Managers may filter by any userId, or omit it to see everyone.
     const userId = callerIsManager ? filters?.userId : caller.sub;
 
+    // A draft is the owner's unpublished working copy. A manager browsing
+    // anyone else's reports (including the unfiltered "everyone" list) must
+    // never see it — only the report's own owner can list their drafts.
+    const viewingOthers = callerIsManager && userId !== caller.sub;
+
     const pagination = resolvePagination(pageQuery);
     const where: Prisma.ReportWhereInput = {
       userId,
@@ -225,6 +230,7 @@ export class ReportService {
       reportStatusId: filters?.reportStatusId,
       ...(filters?.startDate && { startDate: { gte: new Date(filters.startDate) } }),
       ...(filters?.endDate && { endDate: { lte: new Date(filters.endDate) } }),
+      ...(viewingOthers && { reportStatus: { name: { not: DRAFT_STATUS } } }),
     };
 
     const [data, count] = await Promise.all([
