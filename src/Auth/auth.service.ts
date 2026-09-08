@@ -1,9 +1,17 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { UserService } from '../User/user.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { generateRefreshToken, hashRefreshToken, refreshTokenExpiry } from './refresh-token.util.js';
+
+interface SignupInput {
+  name: string;
+  email: string;
+  password: string;
+  jobTitle?: string;
+}
 
 @Injectable()
 export class AuthService {
@@ -25,11 +33,50 @@ export class AuthService {
     return refreshToken;
   }
 
+  async signup(input: SignupInput) {
+    const memberRole = await this.prisma.role.findUnique({ where: { name: 'Team Member' } });
+    if (!memberRole) {
+      throw new NotFoundException('Default role is not configured');
+    }
+    const pendingStatus = await this.prisma.userStatus.findUnique({ where: { name: 'Pending Approval' } });
+    if (!pendingStatus) {
+      throw new NotFoundException('User status is not configured');
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, 12);
+    try {
+      return await this.prisma.user.create({
+        data: {
+          name: input.name,
+          email: input.email,
+          passwordHash,
+          roleId: memberRole.id,
+          userStatusId: pendingStatus.id,
+          jobTitle: input.jobTitle,
+          mustChangePassword: false,
+          isActive: true,
+        },
+        select: { id: true, name: true, email: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Email is already registered');
+      }
+      throw error;
+    }
+  }
+
   async login(email: string, password: string, include?: string) {
     const user = await this.userService.findByEmail(email, include);
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+    if (user.userStatus?.name === 'Pending Approval') {
+      throw new UnauthorizedException('Your account is awaiting manager approval.');
+    }
+    if (user.userStatus?.name === 'Rejected') {
+      throw new UnauthorizedException('Your signup request was not approved. Contact your manager.');
     }
     if (!user.isActive) {
       throw new UnauthorizedException('User account is locked or inactive. Please contact support.');
@@ -70,7 +117,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const user = await this.userService.findOne(stored.userId);
+    const user = await this.userService.findOne(stored.userId, 'userStatus');
+    if (user.userStatus?.name === 'Pending Approval' || user.userStatus?.name === 'Rejected') {
+      throw new UnauthorizedException('Your account is no longer able to sign in. Contact your manager.');
+    }
     if (!user.isActive) {
       throw new UnauthorizedException('User account is locked or inactive. Please contact support.');
     }

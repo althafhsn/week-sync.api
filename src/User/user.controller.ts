@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { UserService } from './user.service.js';
 import { CreateUserDto } from './DTO/create-user.dto.js';
 import { UpdateUserDto } from './DTO/update-user.dto.js';
@@ -28,9 +28,10 @@ export class UserController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateUserDto: UpdateUserDto,
+    @Req() req: { user: { roleId: number } },
     @Query('include') include?: string,
   ) {
-    return this.userService.update(id, updateUserDto, include);
+    return this.userService.update(id, updateUserDto, include, req.user.roleId);
   }
 
   @Delete(':id')

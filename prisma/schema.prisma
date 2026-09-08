@@ -21,6 +21,14 @@ model Role {
   @@map("roles")
 }
 
+model UserStatus {
+  id    Int    @id @default(autoincrement())
+  name  String @unique @db.VarChar(50)
+  users User[]
+
+  @@map("user_statuses")
+}
+
 model User {
   id                 String   @id @default(uuid()) @db.Uuid
   name               String   @db.VarChar(100)
@@ -28,16 +36,56 @@ model User {
   passwordHash       String   @map("password_hash")
   mustChangePassword Boolean  @default(false) @map("must_change_password")
   roleId             Int      @map("role_id")
+  userStatusId       Int?     @map("user_status_id")
   jobTitle           String?  @map("job_title") @db.VarChar(100)
   isActive           Boolean  @default(true) @map("is_active")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   role          Role           @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  userStatus    UserStatus?    @relation(fields: [userStatusId], references: [id], onDelete: Restrict)
   userProjects  UserProject[]
+  teamMembers   TeamMember[]
   reports       Report[]
   refreshTokens RefreshToken[]
 
   @@map("users")
+}
+
+model Team {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(150)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  teamMembers  TeamMember[]
+  teamProjects TeamProject[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id     String @id @default(uuid()) @db.Uuid
+  teamId String @map("team_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+model TeamProject {
+  id        String @id @default(uuid()) @db.Uuid
+  teamId    String @map("team_id") @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([teamId, projectId])
+  @@map("team_projects")
 }
 
 model RefreshToken {
@@ -64,6 +112,7 @@ model Project {
 
   projectStatus ProjectStatus @relation(fields: [projectStatusId], references: [id], onDelete: Restrict)
   userProjects  UserProject[]
+  teamProjects  TeamProject[]
   reports       Report[]
 
   @@map("projects")

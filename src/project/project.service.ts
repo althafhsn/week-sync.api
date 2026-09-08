@@ -20,6 +20,14 @@ const PROJECT_INCLUDE_MAP = {
       },
     },
   },
+  teams: {
+    field: 'teamProjects',
+    value: {
+      include: {
+        team: { select: { id: true, name: true } },
+      },
+    },
+  },
   reports: { field: 'reports', value: true },
 };
 
@@ -32,8 +40,9 @@ export class ProjectService {
   }
 
   async create(createProjectDto: CreateProjectDto, include?: string) {
-    const { projectStatus, userProjects, ...rest } = createProjectDto;
+    const { projectStatus, userProjects, teamProjects, ...rest } = createProjectDto;
     const teamMemberIds = (userProjects ?? []).map((ref) => ref.user.id);
+    const teamIds = (teamProjects ?? []).map((ref) => ref.team.id);
 
     try {
       return await this.prisma.project.create({
@@ -47,6 +56,13 @@ export class ProjectService {
               },
             })),
           },
+          teamProjects: {
+            create: teamIds.map((teamId) => ({
+              team: {
+                connect: { id: teamId },
+              },
+            })),
+          },
         },
         include: this.buildInclude(include),
       });
@@ -55,7 +71,7 @@ export class ProjectService {
         throw new ConflictException(`A project named "${createProjectDto.name}" already exists`);
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === RECORD_NOT_FOUND) {
-        throw new NotFoundException('One or more team members were not found');
+        throw new NotFoundException('One or more team members or teams were not found');
       }
       throw error;
     }
@@ -67,7 +83,12 @@ export class ProjectService {
     pageQuery?: RawPaginationQuery,
   ) {
     const where: Prisma.ProjectWhereInput = {
-      ...(filters?.userId && { userProjects: { some: { userId: filters.userId } } }),
+      ...(filters?.userId && {
+        OR: [
+          { userProjects: { some: { userId: filters.userId } } },
+          { teamProjects: { some: { team: { teamMembers: { some: { userId: filters.userId } } } } } },
+        ],
+      }),
       ...(filters?.projectStatusId !== undefined && { projectStatusId: filters.projectStatusId }),
     };
     const resolvedWhere = Object.keys(where).length ? where : undefined;
@@ -98,14 +119,14 @@ export class ProjectService {
   }
 
   async update(id: string, updateProjectDto: UpdateProjectDto, include?: string) {
-    const { projectStatus, userProjects, ...rest } = updateProjectDto;
+    const { projectStatus, userProjects, teamProjects, ...rest } = updateProjectDto;
     const data: Prisma.ProjectUpdateInput = {
       ...rest,
       ...(projectStatus && { projectStatus: { connect: { id: projectStatus.id } } }),
     };
 
     try {
-      if (userProjects === undefined) {
+      if (userProjects === undefined && teamProjects === undefined) {
         return await this.prisma.project.update({
           where: { id },
           data,
@@ -113,24 +134,49 @@ export class ProjectService {
         });
       }
 
-      const teamMemberIds = userProjects.map((ref) => ref.user.id);
-      const results = await this.prisma.$transaction([
-        this.prisma.userProject.deleteMany({
-          where: { projectId: id, userId: { notIn: teamMemberIds } },
-        }),
-        ...teamMemberIds.map((userId) =>
-          this.prisma.userProject.upsert({
-            where: { userId_projectId: { userId, projectId: id } },
-            update: {},
-            create: { userId, projectId: id },
+      const ops: Prisma.PrismaPromise<unknown>[] = [];
+
+      if (userProjects !== undefined) {
+        const teamMemberIds = userProjects.map((ref) => ref.user.id);
+        ops.push(
+          this.prisma.userProject.deleteMany({
+            where: { projectId: id, userId: { notIn: teamMemberIds } },
           }),
-        ),
+          ...teamMemberIds.map((userId) =>
+            this.prisma.userProject.upsert({
+              where: { userId_projectId: { userId, projectId: id } },
+              update: {},
+              create: { userId, projectId: id },
+            }),
+          ),
+        );
+      }
+
+      if (teamProjects !== undefined) {
+        const teamIds = teamProjects.map((ref) => ref.team.id);
+        ops.push(
+          this.prisma.teamProject.deleteMany({
+            where: { projectId: id, teamId: { notIn: teamIds } },
+          }),
+          ...teamIds.map((teamId) =>
+            this.prisma.teamProject.upsert({
+              where: { teamId_projectId: { teamId, projectId: id } },
+              update: {},
+              create: { teamId, projectId: id },
+            }),
+          ),
+        );
+      }
+
+      ops.push(
         this.prisma.project.update({
           where: { id },
           data,
           include: this.buildInclude(include),
         }),
-      ]);
+      );
+
+      const results = await this.prisma.$transaction(ops);
       return results[results.length - 1];
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -141,11 +187,11 @@ export class ProjectService {
           throw new ConflictException(`A project named "${updateProjectDto.name}" already exists`);
         }
         if (error.code === 'P2003') {
-          throw new NotFoundException('One or more team members were not found');
+          throw new NotFoundException('One or more team members or teams were not found');
         }
       }
       if (isRestrictViolation(error)) {
-        throw new ConflictException('Cannot remove one or more team members while they still have related records');
+        throw new ConflictException('Cannot remove one or more team members or teams while they still have related records');
       }
       throw error;
     }

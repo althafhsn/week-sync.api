@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -28,11 +29,20 @@ const AUTH_INCLUDE_MAP = {
 
 const USER_INCLUDE_MAP = {
   ...AUTH_INCLUDE_MAP,
+  userStatus: { field: 'userStatus', value: true },
   projects: {
     field: 'userProjects',
     value: {
       include: {
         project: true,
+      },
+    },
+  },
+  team: {
+    field: 'teamMembers',
+    value: {
+      include: {
+        team: { select: { id: true, name: true } },
       },
     },
   },
@@ -49,14 +59,24 @@ export class UserService {
     };
   }
 
+  private async getStatusIdByName(name: string): Promise<number> {
+    const status = await this.prisma.userStatus.findUnique({ where: { name } });
+    if (!status) {
+      throw new NotFoundException(`User status "${name}" is not configured`);
+    }
+    return status.id;
+  }
+
   async create(createUserDto: CreateUserDto, include?: string) {
-    const { password, ...userData } = createUserDto;
+    const { password, userStatusId, ...userData } = createUserDto;
     const passwordHash = await bcrypt.hash(password, 12);
+    const resolvedUserStatusId = userStatusId ?? (await this.getStatusIdByName('Approved'));
 
     try {
       return await this.prisma.user.create({
         data: {
           ...userData,
+          userStatusId: resolvedUserStatusId,
           passwordHash,
           mustChangePassword: true,
         },
@@ -99,18 +119,29 @@ export class UserService {
   findByEmail(email: string, include?: string) {
     return this.prisma.user.findUnique({
       where: { email },
-      include: parseInclude<Prisma.UserInclude>(include, AUTH_INCLUDE_MAP),
+      include: {
+        ...parseInclude<Prisma.UserInclude>(include, AUTH_INCLUDE_MAP),
+        userStatus: true,
+      },
     });
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto, include?: string) {
-    const { password, ...userData } = updateUserDto;
+  async update(id: string, updateUserDto: UpdateUserDto, include?: string, callerRoleId?: number) {
+    const { password, userStatusId, ...userData } = updateUserDto;
+
+    if (userStatusId !== undefined) {
+      const callerRole = callerRoleId !== undefined ? await this.prisma.role.findUnique({ where: { id: callerRoleId } }) : null;
+      if (callerRole?.name !== 'Manager') {
+        throw new ForbiddenException('Only a Manager can change a user\'s approval status');
+      }
+    }
 
     try {
       return await this.prisma.user.update({
         where: { id },
         data: {
           ...userData,
+          ...(userStatusId !== undefined && { userStatusId }),
           ...(password && { passwordHash: await bcrypt.hash(password, 12) }),
         },
         select: this.buildSelect(include),

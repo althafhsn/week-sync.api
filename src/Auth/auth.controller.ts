@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, HttpStatus, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { AuthService } from './auth.service.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 
@@ -9,6 +9,25 @@ class LoginDto {
 
   @IsString()
   password: string;
+}
+
+class SignupDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(8)
+  password: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  jobTitle?: string;
 }
 
 class RefreshTokenDto {
@@ -33,6 +52,11 @@ export class AuthController {
   @Post('login')
   login(@Body() loginDto: LoginDto, @Query('include') include?: string) {
     return this.authService.login(loginDto.email, loginDto.password, include);
+  }
+
+  @Post('signup')
+  signup(@Body() signupDto: SignupDto) {
+    return this.authService.signup(signupDto);
   }
 
   @Post('refresh')

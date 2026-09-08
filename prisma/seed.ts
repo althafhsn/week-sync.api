@@ -18,6 +18,7 @@ async function seedLookup(
 async function main() {
   await seedLookup(prisma.projectStatus, ['Proposed', 'Active', 'Archived']);
   await seedLookup(prisma.role, ['Manager', 'Team Member']);
+  await seedLookup(prisma.userStatus, ['Pending Approval', 'Approved', 'Rejected']);
 
   await seedLookup(prisma.reportStatus, [
     'Draft',
@@ -66,6 +67,7 @@ async function main() {
       createdAt: new Date('2026-09-06T13:11:57.471Z'),
       mustChangePassword: false,
       roleId: 1,
+      userStatusId: 2,
       jobTitle: 'Tech Lead',
     },
     {
@@ -77,6 +79,7 @@ async function main() {
       createdAt: new Date('2026-09-06T13:39:57.919Z'),
       mustChangePassword: true,
       roleId: 2,
+      userStatusId: 2,
       jobTitle: null,
     },
     {
@@ -88,6 +91,7 @@ async function main() {
       createdAt: new Date('2026-09-06T13:38:36.637Z'),
       mustChangePassword: false,
       roleId: 2,
+      userStatusId: 2,
       jobTitle: 'Software Engineer',
     },
   ];

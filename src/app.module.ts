@@ -6,7 +6,10 @@ import { ProjectModule } from './project/project.module.js';
 import { AuthModule } from './Auth/auth.module.js';
 import { UserModule } from './User/user.module.js';
 import { UserProjectModule } from './user-project/user-project.module.js';
+import { TeamModule } from './team/team.module.js';
+import { TeamMemberModule } from './team-member/team-member.module.js';
 import { RoleModule } from './lookup/role/role.module.js';
+import { UserStatusModule } from './lookup/user-status/user-status.module.js';
 import { ProjectStatusModule } from './lookup/project-status/project-status.module.js';
 import { ReportStatusModule } from './lookup/report-status/report-status.module.js';
 import { PriorityTypeModule } from './lookup/priority-type/priority-type.module.js';
@@ -26,7 +29,10 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
     UserModule,
     AuthModule,
     UserProjectModule,
+    TeamModule,
+    TeamMemberModule,
     RoleModule,
+    UserStatusModule,
     ProjectStatusModule,
     ReportStatusModule,
     PriorityTypeModule,

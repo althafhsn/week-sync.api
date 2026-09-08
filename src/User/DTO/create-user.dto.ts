@@ -16,6 +16,10 @@ export class CreateUserDto {
   roleId: number;
 
   @IsOptional()
+  @IsInt()
+  userStatusId?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(100)
   jobTitle?: string;
