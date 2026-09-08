@@ -3,6 +3,8 @@ import { ProjectService } from './project.service.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
 import { JwtAuthGuard } from '../Auth/jwt-auth.guard.js';
+import { RolesGuard } from '../Auth/roles.guard.js';
+import { Roles } from '../Auth/roles.decorator.js';
 import { getUuidFilterParam, getIntFilterParam } from '../common/query-filter.util.js';
 
 @Controller('project')
@@ -11,6 +13,8 @@ export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
 
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles('Manager')
   create(@Body() createProjectDto: CreateProjectDto, @Query('include') include?: string) {
     return this.projectService.create(createProjectDto, include);
   }
@@ -31,6 +35,8 @@ export class ProjectController {
   }
 
   @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles('Manager')
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateProjectDto: UpdateProjectDto,
@@ -41,6 +47,8 @@ export class ProjectController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(RolesGuard)
+  @Roles('Manager')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.projectService.remove(id);
   }

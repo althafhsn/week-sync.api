@@ -6,7 +6,9 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
 } from 'class-validator';
 
 export class TaskInputDto {
@@ -26,18 +28,24 @@ export class TaskInputDto {
 
   @IsOptional()
   @IsInt()
+  @Min(0)
+  @Max(100)
   planned?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(0)
+  @Max(100)
   actual?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(0)
   plannedHour?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(0)
   actualHour?: number;
 
   @IsOptional()
@@ -101,6 +109,7 @@ export class HoursInputDto {
 
   @Type(() => Number)
   @IsNumber()
+  @Min(0)
   hours: number;
 
   @IsOptional()

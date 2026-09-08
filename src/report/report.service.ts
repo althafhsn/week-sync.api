@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateReportDto } from './dto/create-report.dto.js';
@@ -8,10 +8,38 @@ import { pickTaskData, pickNextWeekTaskData, pickHighlightData, pickHoursData } 
 import { isRestrictViolation } from '../common/prisma-error.util.js';
 import { parseInclude } from '../common/parse-include.util.js';
 import { RawPaginationQuery, resolvePagination, toPaginatedResult } from '../common/pagination.util.js';
+import { AuthenticatedUser, assertReportAccess, isManagerRole } from '../common/report-access.util.js';
 
 const RECORD_NOT_FOUND = 'P2025';
 const FOREIGN_KEY_VIOLATION = 'P2003';
 const NEEDS_CORRECTION_STATUS = 'Needs Correction';
+const DRAFT_STATUS = 'Draft';
+const SUBMITTED_STATUS = 'Submitted';
+const APPROVED_STATUS = 'Approved';
+
+// Legal reportStatus transitions, keyed by current status name. An employee
+// addressing corrections may save their in-progress fix as a Draft again
+// (not just resubmit outright) before eventually moving back to Submitted.
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  [DRAFT_STATUS]: [SUBMITTED_STATUS],
+  [SUBMITTED_STATUS]: [NEEDS_CORRECTION_STATUS, APPROVED_STATUS],
+  [NEEDS_CORRECTION_STATUS]: [DRAFT_STATUS, SUBMITTED_STATUS],
+  [APPROVED_STATUS]: [],
+};
+
+// Fields only the report's owner may change (report content).
+const OWNER_ONLY_FIELDS = [
+  'tasks',
+  'reportHighlights',
+  'reportHours',
+  'reportNextWeekTasks',
+  'notes',
+  'links',
+  'startDate',
+  'endDate',
+  'userId',
+  'projectId',
+] as const;
 
 const REPORT_INCLUDE_MAP = {
   user: { field: 'user', value: { select: { id: true, name: true, email: true, jobTitle: true } } },
@@ -71,8 +99,21 @@ export class ReportService {
     });
   }
 
-  async getHistory(reportId: string, pageQuery?: RawPaginationQuery) {
-    await this.findOne(reportId);
+  private async loadReportForAccessCheck(id: string) {
+    const report = await this.prisma.report.findUnique({
+      where: { id },
+      include: { reportStatus: true },
+    });
+    if (!report) {
+      throw new NotFoundException(`Report with id "${id}" not found`);
+    }
+    return report;
+  }
+
+  async getHistory(reportId: string, caller: AuthenticatedUser, pageQuery?: RawPaginationQuery) {
+    const report = await this.loadReportForAccessCheck(reportId);
+    assertReportAccess(report.userId, caller, await isManagerRole(this.prisma, caller.roleId));
+
     const pagination = resolvePagination(pageQuery);
     const where: Prisma.ReportHistoryWhereInput = { reportId };
 
@@ -106,7 +147,10 @@ export class ReportService {
     return toPaginatedResult(data, count, pagination);
   }
 
-  async getHistoryVersion(reportId: string, historyId: string) {
+  async getHistoryVersion(reportId: string, historyId: string, caller: AuthenticatedUser) {
+    const report = await this.loadReportForAccessCheck(reportId);
+    assertReportAccess(report.userId, caller, await isManagerRole(this.prisma, caller.roleId));
+
     const version = await this.prisma.reportHistory.findFirst({
       where: { id: historyId, reportId },
       include: { reportStatus: true },
@@ -117,9 +161,8 @@ export class ReportService {
     return version;
   }
 
-  async create(dto: CreateReportDto, include?: string) {
+  async create(dto: CreateReportDto, caller: AuthenticatedUser, include?: string) {
     const {
-      userId,
       projectId,
       tasks,
       reportHighlights,
@@ -133,13 +176,16 @@ export class ReportService {
       user: _user,
       project: _project,
       reportStatus: _reportStatus,
+      userId: _userId,
       ...rest
     } = dto;
 
     try {
       return await this.prisma.report.create({
         data: {
-          userId,
+          // A report can only ever be created for the authenticated caller —
+          // never trust a client-supplied userId here.
+          userId: caller.sub,
           projectId,
           ...rest,
           startDate: new Date(startDate),
@@ -162,13 +208,19 @@ export class ReportService {
   }
 
   async findAll(
-    include?: string,
-    filters?: { userId?: string; projectId?: string; reportStatusId?: number; startDate?: string; endDate?: string },
+    include: string | undefined,
+    filters: { userId?: string; projectId?: string; reportStatusId?: number; startDate?: string; endDate?: string } | undefined,
+    caller: AuthenticatedUser,
     pageQuery?: RawPaginationQuery,
   ) {
+    const callerIsManager = await isManagerRole(this.prisma, caller.roleId);
+    // Employees can only ever list their own reports — any userId filter they
+    // pass is overridden. Managers may filter by any userId, or omit it to see everyone.
+    const userId = callerIsManager ? filters?.userId : caller.sub;
+
     const pagination = resolvePagination(pageQuery);
     const where: Prisma.ReportWhereInput = {
-      userId: filters?.userId,
+      userId,
       projectId: filters?.projectId,
       reportStatusId: filters?.reportStatusId,
       ...(filters?.startDate && { startDate: { gte: new Date(filters.startDate) } }),
@@ -189,7 +241,7 @@ export class ReportService {
     return toPaginatedResult(data, count, pagination);
   }
 
-  async findOne(id: string, include?: string) {
+  async findOne(id: string, caller: AuthenticatedUser, include?: string) {
     const report = await this.prisma.report.findUnique({
       where: { id },
       include: this.buildInclude(include),
@@ -197,10 +249,80 @@ export class ReportService {
     if (!report) {
       throw new NotFoundException(`Report with id "${id}" not found`);
     }
+    assertReportAccess(report.userId, caller, await isManagerRole(this.prisma, caller.roleId));
     return report;
   }
 
-  async update(id: string, dto: UpdateReportDto, include?: string) {
+  private assertUpdatePermissions(
+    current: { userId: string; reportStatus: { name: string } },
+    dto: UpdateReportDto,
+    caller: AuthenticatedUser,
+    callerIsManager: boolean,
+    targetStatusName: string | undefined,
+  ) {
+    const currentStatusName = current.reportStatus.name;
+    const isOwnerActing = current.userId === caller.sub;
+
+    if (targetStatusName && targetStatusName !== currentStatusName) {
+      const allowed = ALLOWED_TRANSITIONS[currentStatusName] ?? [];
+      if (!allowed.includes(targetStatusName)) {
+        throw new ConflictException(`Cannot move a report from "${currentStatusName}" to "${targetStatusName}"`);
+      }
+    }
+
+    if (!isOwnerActing) {
+      // A Manager reviewing someone else's report may only record a decision
+      // (status + comment) on a Submitted report — never edit its content.
+      if (!callerIsManager) {
+        throw new ForbiddenException('You do not have access to this report');
+      }
+      for (const field of OWNER_ONLY_FIELDS) {
+        if (dto[field] !== undefined) {
+          throw new ForbiddenException('Managers may only set a decision status and a review comment');
+        }
+      }
+      if (currentStatusName !== SUBMITTED_STATUS) {
+        throw new ConflictException('Only a submitted report can be reviewed');
+      }
+      if (!targetStatusName || (targetStatusName !== APPROVED_STATUS && targetStatusName !== NEEDS_CORRECTION_STATUS)) {
+        throw new ConflictException('A review must approve or request corrections');
+      }
+      return;
+    }
+
+    // The owner (employee, or a manager editing their own report) is editing.
+    if (dto.comment !== undefined) {
+      throw new ForbiddenException('Only a reviewing manager can set a review comment');
+    }
+    if (
+      targetStatusName &&
+      targetStatusName !== currentStatusName &&
+      targetStatusName !== SUBMITTED_STATUS &&
+      targetStatusName !== DRAFT_STATUS
+    ) {
+      throw new ForbiddenException('You can only save or submit your own report, not approve or reject it');
+    }
+    const editableStatuses: string[] = [DRAFT_STATUS, NEEDS_CORRECTION_STATUS];
+    if (!editableStatuses.includes(currentStatusName)) {
+      throw new ConflictException(`Cannot edit a report that is already "${currentStatusName}"`);
+    }
+  }
+
+  async update(id: string, dto: UpdateReportDto, caller: AuthenticatedUser, include?: string) {
+    const current = await this.loadReportForAccessCheck(id);
+    const callerIsManager = await isManagerRole(this.prisma, caller.roleId);
+
+    let targetStatusName: string | undefined;
+    if (dto.reportStatusId !== undefined) {
+      const targetStatus = await this.prisma.reportStatus.findUnique({ where: { id: dto.reportStatusId } });
+      if (!targetStatus) {
+        throw new NotFoundException('Report status not found');
+      }
+      targetStatusName = targetStatus.name;
+    }
+
+    this.assertUpdatePermissions(current, dto, caller, callerIsManager, targetStatusName);
+
     const {
       tasks,
       reportHighlights,
@@ -280,6 +402,9 @@ export class ReportService {
             ...rest,
             ...(startDate && { startDate: new Date(startDate) }),
             ...(endDate && { endDate: new Date(endDate) }),
+            // Starting a fresh draft leaves any prior review comment behind —
+            // it no longer applies to the content being drafted.
+            ...(targetStatusName === DRAFT_STATUS && { comment: null }),
           },
           include: this.buildInclude(include),
         });
@@ -297,7 +422,10 @@ export class ReportService {
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, caller: AuthenticatedUser) {
+    const report = await this.loadReportForAccessCheck(id);
+    assertReportAccess(report.userId, caller, await isManagerRole(this.prisma, caller.roleId));
+
     try {
       return await this.prisma.report.delete({ where: { id } });
     } catch (error) {

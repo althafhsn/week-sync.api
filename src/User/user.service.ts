@@ -104,7 +104,14 @@ export class UserService {
     return toPaginatedResult(data, count, pagination);
   }
 
-  async findOne(id: string, include?: string) {
+  async findOne(id: string, include?: string, caller?: { sub: string; roleId: number }) {
+    if (caller && caller.sub !== id) {
+      const callerRole = await this.prisma.role.findUnique({ where: { id: caller.roleId } });
+      if (callerRole?.name !== 'Manager') {
+        throw new ForbiddenException('You can only view your own profile');
+      }
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: this.buildSelect(include),
@@ -126,13 +133,26 @@ export class UserService {
     });
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto, include?: string, callerRoleId?: number) {
+  async update(id: string, updateUserDto: UpdateUserDto, include?: string, caller?: { sub: string; roleId: number }) {
     const { password, userStatusId, ...userData } = updateUserDto;
 
-    if (userStatusId !== undefined) {
-      const callerRole = callerRoleId !== undefined ? await this.prisma.role.findUnique({ where: { id: callerRoleId } }) : null;
-      if (callerRole?.name !== 'Manager') {
-        throw new ForbiddenException('Only a Manager can change a user\'s approval status');
+    if (caller) {
+      const callerRole = await this.prisma.role.findUnique({ where: { id: caller.roleId } });
+      const callerIsManager = callerRole?.name === 'Manager';
+
+      if (!callerIsManager) {
+        if (caller.sub !== id) {
+          throw new ForbiddenException('You can only update your own profile');
+        }
+        const managerOnlyFields = ['roleId', 'isActive'] as const;
+        for (const field of managerOnlyFields) {
+          if (updateUserDto[field] !== undefined) {
+            throw new ForbiddenException('Only a Manager can change role or active status');
+          }
+        }
+        if (userStatusId !== undefined) {
+          throw new ForbiddenException("Only a Manager can change a user's approval status");
+        }
       }
     }
 

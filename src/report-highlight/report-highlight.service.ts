@@ -1,14 +1,30 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { FindReportHighlightsDto } from './dto/find-report-highlights.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { resolvePagination, toPaginatedResult } from '../common/pagination.util.js';
+import { AuthenticatedUser, isManagerRole } from '../common/report-access.util.js';
 
 @Injectable()
 export class ReportHighlightService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(filter: FindReportHighlightsDto) {
-    const where = { reportId: filter.reportId };
+  async findAll(filter: FindReportHighlightsDto, caller: AuthenticatedUser) {
+    const callerIsManager = await isManagerRole(this.prisma, caller.roleId);
+    if (filter.reportId) {
+      const report = await this.prisma.report.findUnique({ where: { id: filter.reportId }, select: { userId: true } });
+      if (!report) {
+        throw new NotFoundException(`Report with id "${filter.reportId}" not found`);
+      }
+      if (!callerIsManager && report.userId !== caller.sub) {
+        throw new ForbiddenException('You do not have access to this report');
+      }
+    }
+
+    const where: Prisma.ReportHighlightWhereInput = {
+      reportId: filter.reportId,
+      ...(!callerIsManager && { report: { userId: caller.sub } }),
+    };
     const pagination = resolvePagination(filter);
 
     const [data, count] = await Promise.all([
@@ -19,11 +35,19 @@ export class ReportHighlightService {
     return toPaginatedResult(data, count, pagination);
   }
 
-  async findOne(id: string) {
-    const reportHighlight = await this.prisma.reportHighlight.findUnique({ where: { id } });
+  async findOne(id: string, caller: AuthenticatedUser) {
+    const reportHighlight = await this.prisma.reportHighlight.findUnique({
+      where: { id },
+      include: { report: { select: { userId: true } } },
+    });
     if (!reportHighlight) {
       throw new NotFoundException(`Report highlight with id "${id}" not found`);
     }
-    return reportHighlight;
+    const callerIsManager = await isManagerRole(this.prisma, caller.roleId);
+    if (!callerIsManager && reportHighlight.report.userId !== caller.sub) {
+      throw new ForbiddenException('You do not have access to this report');
+    }
+    const { report: _report, ...rest } = reportHighlight;
+    return rest;
   }
 }

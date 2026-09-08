@@ -33,6 +33,7 @@ async function main() {
     'In Progress',
     'Blocked',
     'Carried Over',
+    'Completed',
   ]);
 
   await seedLookup(prisma.reportHourType, [
