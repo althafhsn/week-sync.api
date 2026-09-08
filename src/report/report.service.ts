@@ -11,6 +11,7 @@ import { RawPaginationQuery, resolvePagination, toPaginatedResult } from '../com
 
 const RECORD_NOT_FOUND = 'P2025';
 const FOREIGN_KEY_VIOLATION = 'P2003';
+const NEEDS_CORRECTION_STATUS = 'Needs Correction';
 
 const REPORT_INCLUDE_MAP = {
   user: { field: 'user', value: { select: { id: true, name: true, email: true, jobTitle: true } } },
@@ -28,6 +29,92 @@ export class ReportService {
 
   private buildInclude(include?: string) {
     return parseInclude<Prisma.ReportInclude>(include, REPORT_INCLUDE_MAP);
+  }
+
+  // Snapshots the report as it stands before an edit is applied, but only while it is
+  // "Needs Correction" — this captures exactly the version a manager's comment was made
+  // against, right before the user's resubmission overwrites it.
+  private async archiveIfNeedsCorrection(tx: Prisma.TransactionClient, id: string) {
+    const current = await tx.report.findUnique({
+      where: { id },
+      include: {
+        reportStatus: true,
+        tasks: { include: { priorityType: true, taskStatus: true } },
+        reportNextWeekTasks: true,
+        reportHighlights: { include: { reportHighlightType: true } },
+        reportHours: { include: { reportHourType: true } },
+      },
+    });
+    if (!current || current.reportStatus.name !== NEEDS_CORRECTION_STATUS) {
+      return;
+    }
+
+    const lastVersion = await tx.reportHistory.aggregate({
+      where: { reportId: id },
+      _max: { versionNumber: true },
+    });
+    const { tasks, reportNextWeekTasks, reportHighlights, reportHours, reportStatusId, comment, notes, startDate, endDate, links, updatedAt } = current;
+
+    await tx.reportHistory.create({
+      data: {
+        reportId: id,
+        versionNumber: (lastVersion._max.versionNumber ?? 0) + 1,
+        reportStatusId,
+        comment,
+        notes,
+        startDate,
+        endDate,
+        links,
+        submittedAt: updatedAt,
+        snapshot: JSON.parse(JSON.stringify({ tasks, reportNextWeekTasks, reportHighlights, reportHours })),
+      },
+    });
+  }
+
+  async getHistory(reportId: string, pageQuery?: RawPaginationQuery) {
+    await this.findOne(reportId);
+    const pagination = resolvePagination(pageQuery);
+    const where: Prisma.ReportHistoryWhereInput = { reportId };
+
+    // Deliberately excludes the heavy `snapshot` JSON blob — the list view only
+    // needs enough to identify a version; full content is fetched on demand via
+    // getHistoryVersion().
+    const [data, count] = await Promise.all([
+      this.prisma.reportHistory.findMany({
+        where,
+        skip: pagination.skip,
+        take: pagination.take,
+        orderBy: { versionNumber: 'desc' },
+        select: {
+          id: true,
+          reportId: true,
+          versionNumber: true,
+          reportStatusId: true,
+          reportStatus: true,
+          comment: true,
+          notes: true,
+          startDate: true,
+          endDate: true,
+          links: true,
+          submittedAt: true,
+          archivedAt: true,
+        },
+      }),
+      this.prisma.reportHistory.count({ where }),
+    ]);
+
+    return toPaginatedResult(data, count, pagination);
+  }
+
+  async getHistoryVersion(reportId: string, historyId: string) {
+    const version = await this.prisma.reportHistory.findFirst({
+      where: { id: historyId, reportId },
+      include: { reportStatus: true },
+    });
+    if (!version) {
+      throw new NotFoundException(`Report history version "${historyId}" not found for report "${reportId}"`);
+    }
+    return version;
   }
 
   async create(dto: CreateReportDto, include?: string) {
@@ -132,6 +219,8 @@ export class ReportService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.archiveIfNeedsCorrection(tx, id);
+
         if (tasks) {
           await syncReportChildren(
             tasks,
@@ -194,7 +283,7 @@ export class ReportService {
           },
           include: this.buildInclude(include),
         });
-      }, { timeout: 15000 });
+      }, { timeout: 30000, maxWait: 10000 });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === RECORD_NOT_FOUND) {

@@ -109,16 +109,42 @@ model Report {
   reportNextWeekTasks ReportNextWeekTask[]
   reportHighlights    ReportHighlight[]
   reportHours         ReportHours[]
+  reportHistory       ReportHistory[]
 
   @@map("reports")
 }
 
 model ReportStatus {
-  id      Int      @id @default(autoincrement())
-  name    String   @unique @db.VarChar(50)
-  reports Report[]
+  id             Int             @id @default(autoincrement())
+  name           String          @unique @db.VarChar(50)
+  reports        Report[]
+  reportHistory  ReportHistory[]
 
   @@map("report_statuses")
+}
+
+// Snapshot of a report taken right before it is edited and resubmitted following
+// a "Needs Correction" review, so the version a manager's comment was made
+// against remains visible after the user overwrites the report's live content.
+model ReportHistory {
+  id             String   @id @default(uuid()) @db.Uuid
+  reportId       String   @map("report_id") @db.Uuid
+  versionNumber  Int      @map("version_number")
+  reportStatusId Int      @map("report_status_id")
+  comment        String?
+  notes          String?
+  startDate      DateTime @map("start_date") @db.Date
+  endDate        DateTime @map("end_date") @db.Date
+  links          String?
+  snapshot       Json
+  submittedAt    DateTime @map("submitted_at")
+  archivedAt     DateTime @default(now()) @map("archived_at")
+
+  report       Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportStatus ReportStatus @relation(fields: [reportStatusId], references: [id], onDelete: Restrict)
+
+  @@unique([reportId, versionNumber])
+  @@map("report_history")
 }
 
 model Task {

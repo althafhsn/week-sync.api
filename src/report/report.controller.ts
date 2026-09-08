@@ -35,6 +35,22 @@ export class ReportController {
     return this.reportService.findOne(id, include);
   }
 
+  @Get(':id/history')
+  getHistory(@Param('id', ParseUUIDPipe) id: string, @Query() query?: Record<string, unknown>) {
+    return this.reportService.getHistory(id, {
+      page: query?.page as string | undefined,
+      pageSize: query?.pageSize as string | undefined,
+    });
+  }
+
+  @Get(':id/history/:historyId')
+  getHistoryVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('historyId', ParseUUIDPipe) historyId: string,
+  ) {
+    return this.reportService.getHistoryVersion(id, historyId);
+  }
+
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
