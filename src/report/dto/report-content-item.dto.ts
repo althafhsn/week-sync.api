@@ -1,4 +1,5 @@
 import { Type } from 'class-transformer';
+import { Max, Min } from 'class-validator';
 import {
   IsBoolean,
   IsInt,
@@ -26,18 +27,24 @@ export class TaskInputDto {
 
   @IsOptional()
   @IsInt()
+  @Min(0)
+  @Max(100)
   planned?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(0)
+  @Max(100)
   actual?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(0)
   plannedHour?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(0)
   actualHour?: number;
 
   @IsOptional()
@@ -100,7 +107,11 @@ export class HoursInputDto {
   reportHourTypeId: number;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(
+    { allowNaN: false, allowInfinity: false },
+    { message: 'Hours must be a valid number.' },
+  )
+  @Min(0, { message: 'Hours cannot be negative.' })
   hours: number;
 
   @IsOptional()
