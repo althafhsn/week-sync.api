@@ -17,7 +17,7 @@ Built with [NestJS](https://nestjs.com/) + TypeScript, PostgreSQL, and Prisma OR
 | Role-scoped access (own reports vs. team-wide) | `src/common/report-access.util.ts` + `RolesGuard` on manager-only endpoints |
 | Team dashboard data (filters, status, metrics) | `src/dashboard` |
 | Projects / categories CRUD | `src/project` |
-| Team & team-member management | `src/team`, `src/team-member`, `src/user-project` |
+| Team & team-member management | `src/team`, `src/team-member` |
 | Pagination/filtering on list endpoints | `src/common/pagination.util.ts`, `src/common/query-filter.util.ts` |
 
 ## Tech Stack
@@ -59,11 +59,11 @@ week-sync.api/
 │   ├── Auth/                 # Login/signup/refresh, JWT guard, roles guard
 │   ├── User/                 # User CRUD (admin-facing)
 │   ├── team/, team-member/   # Team management, roster assignment
-│   ├── project/, user-project/  # Projects/categories, member↔project assignment
+│   ├── project/                # Projects/categories CRUD
 │   ├── report/                # Report CRUD, submit/review workflow, version snapshotting
-│   ├── task/                  # Task-level rows on a report (planned vs actual, status)
-│   ├── report-highlight/      # Blockers & achievements, incl. "key" flag
-│   ├── report-hours/          # Hours by task type
+│   ├── task/                  # Task-level rows on a report (service only — no standalone REST surface; consumed via report/)
+│   ├── report-highlight/      # Blockers & achievements, incl. "key" flag (service only, same as task/)
+│   ├── report-hours/          # Hours by task type (service only, same as task/)
 │   ├── dashboard/             # Manager dashboard aggregates (summary metrics, breakdowns)
 │   ├── lookup/                # Reference-data modules (statuses, priorities, roles, etc.)
 │   ├── common/                # Pagination, filtering, access-control helpers, shared DTOs
@@ -154,3 +154,22 @@ DATABASE_URL="<database-url>" npx prisma migrate deploy
 
 - [NestJS Docs](https://docs.nestjs.com)
 - [NestJS Deployment Guide](https://docs.nestjs.com/deployment)
+
+## Code Quality Improvements (`refactor/code-quality-improvements`)
+
+A cleanup pass (branched off `master`, original branch untouched) audited every controller route against actual frontend usage (`week-sync.clientapp`'s `src/lib/api/*` clients and `src/app/api/**` proxy routes), the Postman collection, and the Prisma seed script, then removed what was verifiably unused:
+
+**Removed entirely** (fully dead, no caller anywhere):
+
+- `src/user-project/` module (controller, service, DTOs) — never wired up to anything
+- `AppController.getHello` (`GET /`) — leftover Nest scaffold route, plus its now-unused `AppService`
+- `TaskController`, `ReportHighlightController`, `ReportHoursController` — the standalone REST surface (`GET /tasks`, `/report-highlights`, `/report-hours`) was never called; these entities are only ever consumed nested under a `Report`. The underlying **services are kept** — `report.service.ts` still uses them internally.
+
+**Trimmed** (kept the module, removed unused handlers):
+
+- `TeamController.findOne`, `TeamMemberController.findAll`/`findOne`, `ReportController.remove`, `RoleController.findOne`, `UserStatusController.findOne` — no proxy route or client call referenced them.
+- The 6 lookup controllers (`priority-type`, `project-status`, `report-highlight-type`, `report-hour-type`, `report-status`, `task-status`) — reduced to `findAll` (list) only, since the app only ever reads these as reference data; `create`/`findOne`/`update`/`remove` had no caller. The shared `LookupService` base class was simplified to match.
+
+**Deliberately kept**: `ProjectController.findOne` (`GET /project/:id`) — unused by the product UI, but exercised by `WeekSync.postman_collection.json` as a documented API contract test.
+
+Net effect: ~540 lines removed, `npm run build` passes, and `npm test` has the same pre-existing `ts-jest`/`rootDir` failures that exist on `master` (unrelated to this cleanup — verified via `git stash`).
