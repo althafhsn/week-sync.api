@@ -62,7 +62,7 @@ async function main() {
     {
       id: 'af5e71f8-0e6a-4775-ab2e-c2a2d5b85e96',
       name: 'Althaf',
-      email: 'althafhsn.c@gmail.com',
+      email: 'admin@weeksync.com',
       passwordHash: '$2b$12$nhf9czjXRmIcrpDpDgHI/OqQYnoLUTJakoM5V.IZ2e6lInjPXd03C',
       isActive: true,
       createdAt: new Date('2026-09-06T13:11:57.471Z'),
@@ -70,31 +70,7 @@ async function main() {
       roleId: 1,
       userStatusId: 2,
       jobTitle: 'Tech Lead',
-    },
-    {
-      id: 'd0272135-aa68-4aa6-971f-a26db4e1a2b0',
-      name: 'Imthath',
-      email: 'Imthat@weeksync.com',
-      passwordHash: '$2b$12$AHGkwHHsWzaIBgQ.JK7aTOVQmOD4suku7JwYP.AL4UpgQkUiHVwc2',
-      isActive: true,
-      createdAt: new Date('2026-09-06T13:39:57.919Z'),
-      mustChangePassword: true,
-      roleId: 2,
-      userStatusId: 2,
-      jobTitle: null,
-    },
-    {
-      id: 'daf228ec-de15-489a-8351-79c49e81fa91',
-      name: 'Nasra',
-      email: 'nasra@example.com',
-      passwordHash: '$2b$12$GcnIspnLpFZArmzkiKQmde7gm4a1U.hUaJUng.ORrQCf4hShNIrpq',
-      isActive: true,
-      createdAt: new Date('2026-09-06T13:38:36.637Z'),
-      mustChangePassword: false,
-      roleId: 2,
-      userStatusId: 2,
-      jobTitle: 'Software Engineer',
-    },
+    }
   ];
 
   for (const user of users) {

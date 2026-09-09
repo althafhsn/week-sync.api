@@ -118,6 +118,22 @@ npx prisma generate         # generate the client
 
 > Changing `schema.prisma` yourself? Use `npx prisma migrate dev --name <description>` instead — it creates a migration and regenerates the client.
 
+### Seed data
+
+[`prisma/seed.ts`](prisma/seed.ts) creates:
+
+- **Reference/lookup data** the app expects to exist — roles (`Manager`, `Team Member`), statuses (project/report/task/user), priority types, report-hour types, and highlight types (achievement/blocker categories).
+- **One bootstrap Manager account** (`admin@weeksync.com`, already `Approved` password=`Test@123`— see the `users` array in the script) — this exists because [signup always creates a `Team Member` in `Pending Approval` status](src/Auth/auth.service.ts), so without a seeded Manager there'd be no one able to approve the very first signup.
+- **One sample project** ("Orbit Mobile").
+
+```bash
+npx prisma db seed
+```
+
+Every row is created with `upsert`, so this is safe to (re-)run at any time — including against a database that already has data — it only fills in what's missing, never duplicates or overwrites unrelated rows. Run it once after your first `migrate deploy`, and again after pulling any change to `prisma/seed.ts`.
+
+> The bootstrap account's password isn't documented here (only its bcrypt hash lives in the seed script) — ask whoever set up the project for the credentials, or edit `prisma/seed.ts` to set your own `passwordHash` (generate one with `bcrypt.hash(plaintext, 12)`) before seeding. After that first login, use `/users` to invite/approve everyone else.
+
 ## Running
 
 ```bash
