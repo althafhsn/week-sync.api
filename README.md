@@ -82,7 +82,11 @@ cd week-sync.api
 npm install
 ```
 
-Create a `.env` file:
+Copy the env template and fill in real values:
+
+```bash
+cp .env.example .env
+```
 
 ```env
 DATABASE_URL="postgresql://<user>:<password>@<host>/<database>?sslmode=require"
