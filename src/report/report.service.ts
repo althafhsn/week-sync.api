@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateReportDto } from './dto/create-report.dto.js';
@@ -9,6 +9,8 @@ import { isRestrictViolation } from '../common/prisma-error.util.js';
 import { parseInclude } from '../common/parse-include.util.js';
 import { RawPaginationQuery, resolvePagination, toPaginatedResult } from '../common/pagination.util.js';
 import { AuthenticatedUser, assertReportAccess, isManagerRole } from '../common/report-access.util.js';
+import { VectorStoreService, ReportSearchHit } from '../vector-store/vector-store.service.js';
+import { ReportSearchFilterService, ExtractedReportFilters } from './report-search-filter.service.js';
 
 const RECORD_NOT_FOUND = 'P2025';
 const FOREIGN_KEY_VIOLATION = 'P2003';
@@ -41,6 +43,15 @@ const OWNER_ONLY_FIELDS = [
   'projectId',
 ] as const;
 
+// Always used when (re)indexing a report into the vector store, regardless of what
+// the caller asked the API to include — search needs the human-readable names
+// (owner, project, status) embedded alongside the raw ids to be useful at all.
+const VECTOR_INDEX_INCLUDE = {
+  user: { select: { id: true, name: true, email: true } },
+  project: true,
+  reportStatus: true,
+} satisfies Prisma.ReportInclude;
+
 const REPORT_INCLUDE_MAP = {
   user: { field: 'user', value: { select: { id: true, name: true, email: true, jobTitle: true } } },
   project: { field: 'project', value: true },
@@ -51,12 +62,52 @@ const REPORT_INCLUDE_MAP = {
   reportHours: { field: 'reportHours', value: { include: { reportHourType: true } } },
 };
 
+// Applies the structured filters extracted from an AI-search query to one vector
+// hit. Unlike findAll()'s strict containment (gte startDate / lte endDate) — meant
+// for an exact week-range picker — a report's week can straddle a month/range
+// boundary (e.g. Aug 31 - Sep 4), so a query like "only august" must match on
+// overlap with the requested range rather than requiring the whole week to fit
+// inside it.
+function matchesExtractedFilters(hit: ReportSearchHit, filters: ExtractedReportFilters): boolean {
+  if (filters.userId && hit.userId !== filters.userId) return false;
+  if (filters.projectId && hit.projectId !== filters.projectId) return false;
+  if (filters.reportStatusId != null && hit.reportStatusId !== filters.reportStatusId) return false;
+
+  const hitStart = hit.startDate ? new Date(hit.startDate as string) : undefined;
+  const hitEnd = hit.endDate ? new Date(hit.endDate as string) : undefined;
+
+  if (filters.endDate) {
+    if (!hitStart || hitStart > new Date(filters.endDate)) return false;
+  }
+  if (filters.startDate) {
+    if (!hitEnd || hitEnd < new Date(filters.startDate)) return false;
+  }
+  return true;
+}
+
 @Injectable()
 export class ReportService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ReportService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vectorStore: VectorStoreService,
+    private readonly searchFilters: ReportSearchFilterService,
+  ) {}
 
   private buildInclude(include?: string) {
     return parseInclude<Prisma.ReportInclude>(include, REPORT_INCLUDE_MAP);
+  }
+
+  // Re-fetches the given reports with the full relation set and pushes them into the
+  // vector store, fire-and-forget. Called after any create/update so a report's indexed
+  // copy is refreshed whenever its content changes, and never blocks the HTTP response.
+  private reindexReports(ids: string[]): void {
+    if (ids.length === 0) return;
+    void this.prisma.report
+      .findMany({ where: { id: { in: ids } }, include: VECTOR_INDEX_INCLUDE })
+      .then((reports) => this.vectorStore.indexReportsAsync(reports))
+      .catch((error) => this.logger.error(`Failed to reindex report(s) ${ids.join(', ')}`, error instanceof Error ? error.stack : error));
   }
 
   // Snapshots the report as it stands before an edit is applied, but only while it is
@@ -181,7 +232,7 @@ export class ReportService {
     } = dto;
 
     try {
-      return await this.prisma.report.create({
+      const created = await this.prisma.report.create({
         data: {
           // A report can only ever be created for the authenticated caller —
           // never trust a client-supplied userId here.
@@ -199,6 +250,8 @@ export class ReportService {
         },
         include: this.buildInclude(include),
       });
+      this.reindexReports([created.id]);
+      return created;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === FOREIGN_KEY_VIOLATION) {
         throw new NotFoundException('User, project, or one of the referenced lookup values was not found');
@@ -243,6 +296,10 @@ export class ReportService {
       }),
       this.prisma.report.count({ where }),
     ]);
+
+  
+
+    this.reindexReports(data.map((report) => report.id));
 
     return toPaginatedResult(data, count, pagination);
   }
@@ -346,7 +403,7 @@ export class ReportService {
     } = dto;
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const updated = await this.prisma.$transaction(async (tx) => {
         await this.archiveIfNeedsCorrection(tx, id);
 
         if (tasks) {
@@ -415,6 +472,8 @@ export class ReportService {
           include: this.buildInclude(include),
         });
       }, { timeout: 30000, maxWait: 10000 });
+      this.reindexReports([updated.id]);
+      return updated;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === RECORD_NOT_FOUND) {
@@ -433,7 +492,9 @@ export class ReportService {
     assertReportAccess(report.userId, caller, await isManagerRole(this.prisma, caller.roleId));
 
     try {
-      return await this.prisma.report.delete({ where: { id } });
+      const removed = await this.prisma.report.delete({ where: { id } });
+      this.vectorStore.deleteReportAsync(id);
+      return removed;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === RECORD_NOT_FOUND) {
         throw new NotFoundException(`Report with id "${id}" not found`);
@@ -443,5 +504,41 @@ export class ReportService {
       }
       throw error;
     }
+  }
+
+  // Ranks reports by semantic similarity to `queryText`, then hydrates the matched
+  // page from Postgres so the response is a normal paginated report list (same
+  // shape as findAll) rather than a bare vector hit — a drop-in for the frontend's
+  // existing report list call, just ranked by relevance instead of createdAt.
+  async search(queryText: string, caller: AuthenticatedUser, include: string | undefined, pageQuery?: RawPaginationQuery) {
+    if (!queryText?.trim()) {
+      throw new BadRequestException('Query text is required');
+    }
+
+    const callerIsManager = await isManagerRole(this.prisma, caller.roleId);
+    const pagination = resolvePagination(pageQuery);
+
+    // Understand who/what/when the query names ("reports from nasra", "last
+    // week", "still submitted") so it narrows results the same way the
+    // status/project/date filters on the list view do, on top of ranking by
+    // semantic relevance.
+    const filters = await this.searchFilters.extract(queryText, caller);
+
+    // Over-fetch from the vector store since results still need access filtering
+    // (and, for employees, narrowing to their own reports) before paging.
+    const hits = await this.vectorStore.search(queryText, (pagination.skip + pagination.take) * 5);
+    const accessible = callerIsManager ? hits : hits.filter((hit) => hit.userId === caller.sub);
+    const visible = accessible.filter((hit) => matchesExtractedFilters(hit, filters));
+    const page = visible.slice(pagination.skip, pagination.skip + pagination.take);
+
+    const reports = await this.prisma.report.findMany({
+      where: { id: { in: page.map((hit) => hit.id) } },
+      include: this.buildInclude(include),
+    });
+    const byId = new Map(reports.map((report) => [report.id, report]));
+    // Preserve the vector-similarity ranking — findMany's `in` filter doesn't guarantee order.
+    const data = page.map((hit) => byId.get(hit.id)).filter((report) => report !== undefined);
+
+    return toPaginatedResult(data, visible.length, pagination);
   }
 }

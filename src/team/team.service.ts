@@ -37,9 +37,30 @@ export class TeamService {
     return parseInclude<Prisma.TeamInclude>(include, TEAM_INCLUDE_MAP);
   }
 
+  // A user may belong to at most one team. Rejects the request (naming the
+  // offending users and their existing team) rather than silently moving
+  // them, since that's a workflow decision only the caller should make.
+  private async assertMembersAvailable(memberIds: string[], excludeTeamId?: string) {
+    if (memberIds.length === 0) return;
+
+    const conflicts = await this.prisma.teamMember.findMany({
+      where: {
+        userId: { in: memberIds },
+        ...(excludeTeamId && { teamId: { not: excludeTeamId } }),
+      },
+      include: { user: { select: { name: true } }, team: { select: { name: true } } },
+    });
+
+    if (conflicts.length > 0) {
+      const names = conflicts.map((c) => `${c.user.name} (already in "${c.team.name}")`).join(', ');
+      throw new ConflictException(`Cannot add: ${names}. A user can only belong to one team.`);
+    }
+  }
+
   async create(createTeamDto: CreateTeamDto, include?: string) {
     const { teamMembers, ...rest } = createTeamDto;
     const memberIds = (teamMembers ?? []).map((ref) => ref.user.id);
+    await this.assertMembersAvailable(memberIds);
 
     try {
       return await this.prisma.team.create({
@@ -108,6 +129,8 @@ export class TeamService {
       }
 
       const memberIds = teamMembers.map((ref) => ref.user.id);
+      await this.assertMembersAvailable(memberIds, id);
+
       const results = await this.prisma.$transaction([
         this.prisma.teamMember.deleteMany({
           where: { teamId: id, userId: { notIn: memberIds } },

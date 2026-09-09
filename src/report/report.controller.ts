@@ -44,6 +44,18 @@ export class ReportController {
     );
   }
 
+  @Get('search')
+  search(
+    @Req() req: AuthenticatedRequest,
+    @Query('include') include?: string,
+    @Query() query?: Record<string, unknown>,
+  ) {
+    return this.reportService.search(query?.q as string, req.user, include, {
+      page: query?.page as string | undefined,
+      pageSize: query?.pageSize as string | undefined,
+    });
+  }
+
   @Get(':id')
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
