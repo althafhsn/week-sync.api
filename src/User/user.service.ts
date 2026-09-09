@@ -76,6 +76,7 @@ export class UserService {
       return await this.prisma.user.create({
         data: {
           ...userData,
+          email: userData.email.toLowerCase(),
           userStatusId: resolvedUserStatusId,
           passwordHash,
           mustChangePassword: true,
@@ -125,7 +126,7 @@ export class UserService {
 
   findByEmail(email: string, include?: string) {
     return this.prisma.user.findUnique({
-      where: { email },
+      where: { email: email.toLowerCase() },
       include: {
         ...parseInclude<Prisma.UserInclude>(include, AUTH_INCLUDE_MAP),
         userStatus: true,
@@ -161,6 +162,7 @@ export class UserService {
         where: { id },
         data: {
           ...userData,
+          ...(userData.email !== undefined && { email: userData.email.toLowerCase() }),
           ...(userStatusId !== undefined && { userStatusId }),
           ...(password && { passwordHash: await bcrypt.hash(password, 12) }),
         },
