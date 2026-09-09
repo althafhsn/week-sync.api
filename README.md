@@ -93,6 +93,20 @@ DATABASE_URL="postgresql://<user>:<password>@<host>/<database>?sslmode=require"
 JWT_SECRET="<a long random string>"
 CORS_ORIGINS="http://localhost:3001"
 PORT=3000
+REFRESH_TOKEN_TTL_DAYS=30
+
+# AI-powered report search (Qdrant vector store)
+QDRANT_URL="<qdrant instance url>"
+QDRANT_API_KEY="<qdrant api key>"
+QDRANT_COLLECTION="reports"
+
+# AI-powered report search (OpenAI-compatible embeddings + chat, for filter extraction)
+OPENAI_API_KEY="<openai api key>"
+OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
+OPENAI_EMBEDDINGS_URL="https://api.openai.com/v1/embeddings"
+OPENAI_CHAT_MODEL="gpt-4o-mini"
+OPENAI_CHAT_URL="https://api.openai.com/v1/chat/completions"
+OPENAI_TIMEOUT_SECONDS=30
 ```
 
 Set up the database:
