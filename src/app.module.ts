@@ -1,11 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller.js';
-import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ProjectModule } from './project/project.module.js';
 import { AuthModule } from './Auth/auth.module.js';
 import { UserModule } from './User/user.module.js';
-import { UserProjectModule } from './user-project/user-project.module.js';
 import { TeamModule } from './team/team.module.js';
 import { TeamMemberModule } from './team-member/team-member.module.js';
 import { RoleModule } from './lookup/role/role.module.js';
@@ -28,7 +26,6 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
     ProjectModule,
     UserModule,
     AuthModule,
-    UserProjectModule,
     TeamModule,
     TeamMemberModule,
     RoleModule,
@@ -46,6 +43,5 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
     DashboardModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
 })
 export class AppModule {}

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../Auth/jwt-auth.guard.js';
 import { UserStatusService } from './user-status.service.js';
 
@@ -10,10 +10,5 @@ export class UserStatusController {
   @Get()
   findAll(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
     return this.service.findAll({ page, pageSize });
-  }
-
-  @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.service.findOne(id);
   }
 }

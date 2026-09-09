@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../Auth/jwt-auth.guard.js';
 import { ReportService } from './report.service.js';
 import { CreateReportDto } from './dto/create-report.dto.js';
@@ -94,11 +94,5 @@ export class ReportController {
     @Query('include') include?: string,
   ) {
     return this.reportService.update(id, updateReportDto, req.user, include);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
-    return this.reportService.remove(id, req.user);
   }
 }

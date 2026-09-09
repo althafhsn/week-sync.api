@@ -27,11 +27,6 @@ export class TeamController {
     });
   }
 
-  @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string, @Query('include') include?: string) {
-    return this.teamService.findOne(id, include);
-  }
-
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
