@@ -528,7 +528,18 @@ export class ReportService {
     // (and, for employees, narrowing to their own reports) before paging.
     const hits = await this.vectorStore.search(queryText, (pagination.skip + pagination.take) * 5);
     const accessible = callerIsManager ? hits : hits.filter((hit) => hit.userId === caller.sub);
-    const visible = accessible.filter((hit) => matchesExtractedFilters(hit, filters));
+
+    // Same rule as findAll(): a Draft is the owner's unpublished working copy,
+    // so a manager searching across everyone must never see someone else's
+    // draft turn up in results, even by semantic match.
+    const draftStatus = callerIsManager
+      ? await this.prisma.reportStatus.findUnique({ where: { name: DRAFT_STATUS } })
+      : null;
+    const excludingOthersDrafts = draftStatus
+      ? accessible.filter((hit) => hit.userId === caller.sub || hit.reportStatusId !== draftStatus.id)
+      : accessible;
+
+    const visible = excludingOthersDrafts.filter((hit) => matchesExtractedFilters(hit, filters));
     const page = visible.slice(pagination.skip, pagination.skip + pagination.take);
 
     const reports = await this.prisma.report.findMany({

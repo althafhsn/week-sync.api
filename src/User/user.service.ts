@@ -17,6 +17,7 @@ const USER_LIST_SELECT = {
   name: true,
   email: true,
   roleId: true,
+  userStatusId: true,
   jobTitle: true,
   isActive: true,
   mustChangePassword: true,
